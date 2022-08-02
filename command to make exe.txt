@@ -1,0 +1,1 @@
+pyinstaller --hiddenimport win32timezone -F --onefile --noconsole GUI.py
