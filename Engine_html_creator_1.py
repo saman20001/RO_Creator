@@ -10,6 +10,11 @@ import stat
 import glob
 import pythoncom
 from win32comext.shell import shell
+import pandas as pd
+from datetime import datetime
+
+from openpyxl import Workbook
+
 
 
 class Signaller(QtCore.QObject):
@@ -45,6 +50,7 @@ class FileHandler(QObject):
         self.total_removed_files_before = 0
         self.total_removed_files_red = 0
         self.hasher = QtCore.QCryptographicHash(QtCore.QCryptographicHash.Md5)
+        self.modified_files_dict = {}
 
     def log(self, level, msg, sender=''):
         if sender == '':
@@ -184,7 +190,7 @@ class FileHandler(QObject):
         for root, dirs, files in os.walk(self.before_path):
             for name in files:
                 files_checked += 1
-                percentage_checked = int((files_checked / total_file_numbers)*100)
+                percentage_checked = int((files_checked / total_file_numbers) * 100)
                 self.clearing_progress.emit(percentage_checked)
 
                 before_file_path = os.path.join(root, name).replace("\\", "/")
@@ -243,13 +249,17 @@ class FileHandler(QObject):
     def create_modified_list(self):
         self.Engine_status.emit('create_modified_list_started')
         self.log(logging.INFO, f'Creating List of Modified Pages...')
-        modified_pages_folder = f"{self.ro_folder_path}/Modifed Pages"
+        # modified_pages_folder = f"{self.ro_folder_path}/Modifed Pages"
+        #
+        # os.makedirs(modified_pages_folder, exist_ok=True)
 
-        os.makedirs(modified_pages_folder, exist_ok=True)
+
+        current_app_modified_list = []
 
         for root, dirs, files in os.walk(self.before_path):
-            for name in files:
-                before_file_path = os.path.join(root, name).replace("\\", "/")
+            # modified_hgf_in_current_application_list.clear()
+            for file_name in files:
+                before_file_path = os.path.join(root, file_name).replace("\\", "/")
                 red_file_path = before_file_path.replace('Before', 'Red')
                 before_hash_string = self.make_hash(before_file_path)
                 try:
@@ -257,18 +267,97 @@ class FileHandler(QObject):
                 except:
                     red_hash_string = ''
                 if before_hash_string != red_hash_string and before_file_path.lower().endswith('.hgf'):
-                    before_path_list = before_file_path.split('/')
-                    before_index = before_path_list.index('Before') + 1
-                    document_name_elements = before_path_list[before_index:-1]
-                    document_name = '-'.join(document_name_elements)
-                    modified_pages_path = f"{modified_pages_folder}/{document_name}.txt"
-                    self.total_modified_hgf_files += 1
+                    current_app_modified_list.append(file_name)
+            if current_app_modified_list:
+                self.total_modified_hgf_files += 1
+                root_modified = root.replace("\\", "/")
+                root_path_list = root_modified.split('/')
+                before_index = root_path_list.index('Before')
+                station_index = before_index + 2
+                document_name_elements = root_path_list[station_index:]
+                dictionary_name_list = [document_name_elements[0], document_name_elements[1],
+                                        document_name_elements[-1]]
+                application_name = '-'.join(dictionary_name_list)
+                self.modified_files_dict.update({application_name: current_app_modified_list})
+                current_app_modified_list = []
 
-                    with open(modified_pages_path, "a") as f:
-                        hgf_file_name = before_path_list[-1]
-                        page_name = hgf_file_name.split('.')[0]
-                        f.write(page_name + ',')
-                        f.close()
+        # wb = Workbook()
+        # ws = wb.active
+        # ws.title = 'Modified Files'
+        #
+        # for k, v in self.modified_files_dict.items():
+        #     self.modified_files_dict[k] = ", ".join(v)
+        #
+        # for record in self.modified_files_dict.items():
+        #     ws.append(record)
+        #
+        # wb.save(f"{self.ro_folder_path}/Modifed_Pages.xlsx")
+
+
+        for k, v in self.modified_files_dict.items():
+            self.modified_files_dict[k] = ", ".join(v)
+
+        html_file_name = f"{self.ro_folder_path}/Modifed_Pages.html"
+        df = pd.DataFrame.from_dict(self.modified_files_dict, orient='index').reset_index()
+        df.columns = ['Application', 'Modified Files']
+        df.to_html(html_file_name, justify='center')
+
+        # html_table = df.to_html(justify='center')
+        # html = '''
+        # <html>
+        #     <body>
+        #         <h1>Heading</h1>
+        #     </body>
+        # </html>
+        # '''
+        #
+        #
+        # # write html to file
+        # text_file = open(html_file_name, "w")
+        # text_file.write(html)
+        # text_file.close()
+        #
+
+
+
+        # for k, v in self.modified_files_dict.items():
+        #     self.modified_files_dict[k] = ", ".join(v)
+        #
+        # df = pd.DataFrame.from_dict(self.modified_files_dict, orient='index').reset_index()
+        # df.columns = ['Application', 'Modified_Files']
+        #
+        # file_name = f"{self.ro_folder_path}/Modifed_Pages.xlsx"
+        # sheet_name = "Summary"
+        # writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
+        # df.to_excel(writer, sheet_name=sheet_name, startrow=2, index=False)
+        #
+        # workbook = writer.book
+        # worksheet = writer.sheets[sheet_name]
+        # worksheet.write(0, 0, f'List of Modified Files for Ro Number {self.ro_number}',
+        #                 workbook.add_format({'bold': True, 'color': '#E26B0A', 'size': 14}))
+        #
+        # worksheet.write(len(df) + 4, 0, 'Remark:', workbook.add_format({'bold': True}))
+        # worksheet.write(len(df) + 5, 0, 'Report taken at ' + datetime.now().strftime('%d %b %Y %H:%M') + '.')
+        #
+        # header_format = workbook.add_format({'bold': True, 'text_wrap': True, 'fg_color': '#FDE9D9', 'border': 1})
+        # for col_num, value in enumerate(df.columns.values):
+        #     worksheet.write(2, col_num, value, header_format)
+        #
+        # row_idx, col_idx = df.shape
+        # for r in range(row_idx):
+        #     for c in range(col_idx):
+        #         if c == 6:
+        #             worksheet.write(r + 3, c, df.values[r, c],
+        #                             workbook.add_format({'border': 1, 'num_format': '0.00%'}))
+        #         else:
+        #             worksheet.write(r + 3, c, df.values[r, c],
+        #                             workbook.add_format({'border': 1, 'num_format': '0.00'}))
+        #
+        # worksheet.set_column(0, 0, 12)
+        # worksheet.set_column(1, 1, 30)
+
+
+
 
 
         self.log(logging.INFO, f'There are in total {self.total_modified_hgf_files} hgf files that are modified.')

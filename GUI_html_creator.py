@@ -2,13 +2,14 @@ from datetime import datetime
 import logging
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.uic import loadUi
 import sys
 from PyQt5.QtWidgets import QApplication
 import os
 from config_manager import DataSetting
-from Engine import FileHandler, QtHandler
+from Engine_html_creator_2 import FileHandler, QtHandler
+
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -81,7 +82,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thread.start()
 
     def setup_ui(self):
-        loadUi(".\GUI\GUI_2.ui", self)
+        loadUi(".\GUI\GUI_8.ui", self)
+        self.checkBox_logs.setChecked(True)
+        self.Frame_Pbar.hide()
         self.lineEdit_RoNumber.setEnabled(False)
         self.btn_BrowseAppsoftware.setEnabled(False)
         self.btn_CreateBeforeRed.setEnabled(False)
@@ -106,6 +109,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_OpenExplorer_Create.clicked.connect(self.open_file_explorer)
         self.btn_OpenExplorer_Edit.clicked.connect(self.open_file_explorer)
 
+        self.checkBox_logs.stateChanged.connect(self.logs_checkbox)
+
         self.update_ro_number_list()
         if len(self.ro_list):
             self.rbtn_edit_ro.setChecked(True)
@@ -116,6 +121,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ComboBox_SelectRO.currentTextChanged.connect(self.on_ro_number_selected)
         self.lineEdit_RoNumber.textChanged.connect(self.on_ro_number_text_changed)
         self.lineEdit_WorkingFolder.setText(self.data_setting.working_folder_path)
+
+        self.resizeMe()
 
     @QtCore.pyqtSlot(int)
     def cleaning_percentage_changed(self, percentage):
@@ -131,10 +138,12 @@ class MainWindow(QtWidgets.QMainWindow):
             case 'create_modified_list_done':
                 self.btn_CreateModified.setEnabled(True)
                 self.btn_cleanFiles.setEnabled(True)
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.ro_folder_path + '/Modifed_Pages.html'))
 
             case 'create_modified_list_done_no_modified_files':
                 self.log(logging.INFO, f'No Files has modified')
                 self.btn_CreateModified.setEnabled(True)
+
 
             case 'create_before_red_folders_started':
                 self.btn_BrowseAppsoftware.setEnabled(False)
@@ -144,12 +153,38 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.btn_BrowseAppsoftware.setEnabled(True)
                 self.btn_CreateBeforeRed.setEnabled(True)
                 self.btn_OpenExplorer_Create.setEnabled(True)
+                self.show_popup()
 
+    def show_popup(self):
+        msgBox = QMessageBox()
+        msgBox.setWindowTitle("RO Maker")
+        msgBox.setText("RO Folders has been created!")
+        msgBox.setInformativeText('You may now close this app and work on the RO. Once finished, open the app again and select Edit RO')
+        msgBox.setIcon(QMessageBox.Information)
+        msgBox.setStandardButtons(QMessageBox.Cancel | QMessageBox.Close)
+        msgBox.setDefaultButton(QMessageBox.Ok)
+        returnValue = msgBox.exec()
+        if returnValue == QMessageBox.Cancel:
+            pass
+        elif returnValue == QMessageBox.Close:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.ro_folder_path))
+            self.close()
 
     def log(self, level, msg, sender=''):
         if sender == '':
             sender = self.__class__.__name__
         self.logger.log(level, msg, extra={'sender': sender})
+
+    def logs_checkbox(self, state):
+        if state == QtCore.Qt.Checked:
+            self.Frame_Logger.show()
+        else:
+            self.Frame_Logger.hide()
+        QtCore.QTimer.singleShot(0, self.resizeMe)
+
+    def resizeMe(self):
+        height = self.sizeHint().height()
+        self.setFixedHeight(height)
 
     def update_ro_number_list(self):
         self.ComboBox_SelectRO.clear()
@@ -190,8 +225,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_CreateBeforeRed.setEnabled(False)
 
     def browse_appsoftware_folder(self):
-        self.vault_appsoftware_folder_path = QFileDialog.getExistingDirectory(self, 'Select Project Appsoftware Folder',
-                                                                              'C:\Vault')
+        self.vault_appsoftware_folder_path = QFileDialog.getExistingDirectory(self, 'Select Project Appsoftware Folder', 'C:\Vault')
         if self.vault_appsoftware_folder_path and self.ro_number:
             self.btn_CreateBeforeRed.setEnabled(True)
         else:
@@ -219,12 +253,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_BrowseAppsoftware.setEnabled(True)
             self.btn_CreateBeforeRed.setEnabled(False)
             self.btn_OpenExplorer_Create.setEnabled(False)
+            self.btn_OpenExplorer_Edit.hide()
+            self.btn_OpenExplorer_Create.show()
+            self.Frame_Pbar.hide()
+
 
         else:
             self.Frame_Create_RO.hide()
             self.Frame_Edit_RO.show()
             self.ComboBox_SelectRO.setEnabled(True)
             self.update_ro_number_list()
+            self.btn_OpenExplorer_Edit.show()
+            self.btn_OpenExplorer_Create.hide()
+            self.Frame_Pbar.hide()
 
     def on_ro_number_selected(self, text):
         if text != '':
@@ -243,6 +284,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def clean_files(self):
         self.clean_files_signal.emit()
+        self.Frame_Pbar.show()
 
     def open_file_explorer(self):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.ro_folder_path))

@@ -10,6 +10,10 @@ import stat
 import glob
 import pythoncom
 from win32comext.shell import shell
+import pandas as pd
+from datetime import datetime
+
+from openpyxl import Workbook
 
 
 class Signaller(QtCore.QObject):
@@ -45,6 +49,9 @@ class FileHandler(QObject):
         self.total_removed_files_before = 0
         self.total_removed_files_red = 0
         self.hasher = QtCore.QCryptographicHash(QtCore.QCryptographicHash.Md5)
+        self.modified_files_dict = {}
+        self.modified_files_df = pd.DataFrame(
+            columns=["Area", "Computer", "Application", "Modified Fiels"])
 
     def log(self, level, msg, sender=''):
         if sender == '':
@@ -184,7 +191,7 @@ class FileHandler(QObject):
         for root, dirs, files in os.walk(self.before_path):
             for name in files:
                 files_checked += 1
-                percentage_checked = int((files_checked / total_file_numbers)*100)
+                percentage_checked = int((files_checked / total_file_numbers) * 100)
                 self.clearing_progress.emit(percentage_checked)
 
                 before_file_path = os.path.join(root, name).replace("\\", "/")
@@ -243,33 +250,52 @@ class FileHandler(QObject):
     def create_modified_list(self):
         self.Engine_status.emit('create_modified_list_started')
         self.log(logging.INFO, f'Creating List of Modified Pages...')
-        modified_pages_folder = f"{self.ro_folder_path}/Modifed Pages"
 
-        os.makedirs(modified_pages_folder, exist_ok=True)
+        current_app_modified_list = []
+        current_hafx_path = ''
 
         for root, dirs, files in os.walk(self.before_path):
-            for name in files:
-                before_file_path = os.path.join(root, name).replace("\\", "/")
+            for file in files:
+
+                before_file_path = os.path.join(root, file).replace("\\", "/")
                 red_file_path = before_file_path.replace('Before', 'Red')
+                if file.lower().endswith('.hafx'):
+                    # current_hafx_path = red_file_path
+                    current_hafx_path = red_file_path.lower().split("red",1)[1]
+
                 before_hash_string = self.make_hash(before_file_path)
                 try:
                     red_hash_string = self.make_hash(red_file_path)
                 except:
                     red_hash_string = ''
                 if before_hash_string != red_hash_string and before_file_path.lower().endswith('.hgf'):
-                    before_path_list = before_file_path.split('/')
-                    before_index = before_path_list.index('Before') + 1
-                    document_name_elements = before_path_list[before_index:-1]
-                    document_name = '-'.join(document_name_elements)
-                    modified_pages_path = f"{modified_pages_folder}/{document_name}.txt"
-                    self.total_modified_hgf_files += 1
+                    current_app_modified_list.append(file)
+            if current_app_modified_list:
+                self.total_modified_hgf_files += 1
+                root_modified = root.replace("\\", "/")
+                root_path_list = root_modified.split('/')
+                before_index = root_path_list.index('Before')
+                station_index = before_index + 2
+                root_path_elements = root_path_list[station_index:]
+                area_name = root_path_elements[0]
+                if area_name.lower() == 'functions' or area_name.lower() == 'components':
+                    computer_name = '-'
+                else:
+                    computer_name = root_path_elements[1]
+                application_name = root_path_elements[-1]
 
-                    with open(modified_pages_path, "a") as f:
-                        hgf_file_name = before_path_list[-1]
-                        page_name = hgf_file_name.split('.')[0]
-                        f.write(page_name + ',')
-                        f.close()
+                data = {'Area': area_name,
+                        'Computer': computer_name,
+                        'Application': application_name,
+                        'Modified Fiels': ", ".join(current_app_modified_list)}
 
+                df_new_row = pd.DataFrame(data, index=[0])
+                self.modified_files_df = pd.concat([self.modified_files_df, df_new_row])
+
+                current_app_modified_list = []
+
+        html_file_name = f"{self.ro_folder_path}/Modifed_Pages.html"
+        self.modified_files_df.to_html(html_file_name, justify='left', index=False)
 
         self.log(logging.INFO, f'There are in total {self.total_modified_hgf_files} hgf files that are modified.')
         self.log(logging.INFO, f'Modified Pages List has been created.')
